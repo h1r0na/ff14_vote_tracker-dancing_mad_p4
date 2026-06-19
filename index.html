@@ -30,6 +30,9 @@
   .gimmick-row { display: flex; flex-wrap: wrap; gap: 20px; }
   .gimmick-item { display: flex; flex-direction: column; align-items: center; gap: 5px; }
   .gimmick-icon { width: 40px; height: 40px; object-fit: contain; }
+  /* GC3のみコンパクト化（1行表示） */
+  .gc3-row { gap: 10px; flex-wrap: nowrap; }
+  .gc3-icon { width: 30px; height: 30px; }
   .gimmick-label { font-size: 11px; color: #aaa; text-align: center; }
   .gimmick-btns { display: flex; gap: 4px; }
 
@@ -106,7 +109,7 @@ const GC3_BTNS = [
   { key:'purple_choetsu',label:'紫超越',     img:'choetsu', color:'purple', answer:'紫' },
 ];
 // マジックチャージボタン（排他）
-const MC_BTNS = ['両方踏む','氷踏む','雷踏む','両方踏まない'];
+const MC_BTNS = ['氷が嘘','雷が嘘'];  // 独立トグル（排他ではない）
 
 const SECS = [
   { id:'gc1', title:'グランドクロス１', type:'gc',  gimmicks:GC_GIMMICKS, fixedShisen:'早' },
@@ -303,7 +306,7 @@ function buildUI() {
 
     } else if (s.type === 'gc3') {
       const row = document.createElement('div');
-      row.className = 'gimmick-row';
+      row.className = 'gimmick-row gc3-row';
 
       GC3_BTNS.forEach(g => {
         const item = document.createElement('div');
@@ -311,12 +314,12 @@ function buildUI() {
 
         // アイコン（blue/purple と allagan/choetsu を横並びで2枚表示）
         const iconWrap = document.createElement('div');
-        iconWrap.style.cssText = 'display:flex;gap:4px;align-items:center;';
+        iconWrap.style.cssText = 'display:flex;gap:1px;align-items:center;';
         const colorIcon = document.createElement('img');
-        colorIcon.className = 'gimmick-icon';
+        colorIcon.className = 'gimmick-icon gc3-icon';
         colorIcon.src = IMGS[g.color];
         const typeIcon = document.createElement('img');
-        typeIcon.className = 'gimmick-icon';
+        typeIcon.className = 'gimmick-icon gc3-icon';
         typeIcon.src = IMGS[g.img];
         iconWrap.appendChild(colorIcon);
         iconWrap.appendChild(typeIcon);
@@ -346,12 +349,10 @@ function buildUI() {
         btn.className = 'vb';
         btn.textContent = label;
         btn.addEventListener('click', () => {
-          const wasOn = !!active[k];
-          MC_BTNS.forEach((_, j) => {
-            active[`mc_${j}`] = false;
-            if (btnMap[`mc_${j}`]) btnMap[`mc_${j}`].el.classList.remove('active-true','active-false');
-          });
-          if (!wasOn) { active[k] = true; btn.classList.add('active-true'); }
+          // 独立トグル（互いに干渉しない）
+          active[k] = !active[k];
+          btn.classList.remove('active-true','active-false');
+          if (active[k]) btn.classList.add('active-false'); // 「嘘」なので赤
           updateSummary();
         });
         btnMap[k] = { el: btn, secId: 'mc', raw: label, type: 'mc' };
@@ -386,7 +387,6 @@ function setTruth(secId, isTrue, btnT, btnF, s) {
 function updateSummary() {
   const earlySet = new Set();
   const lateSet  = new Set();
-  const mcList   = [];
 
   const baseToLabel = (base) => {
     if (base === 'atamawari') return '頭割り';
@@ -402,7 +402,7 @@ function updateSummary() {
     if (!active[k]) return;
     const { secId, type, raw } = info;
 
-    if (type === 'mc') { mcList.push(raw); return; }
+    if (type === 'mc') return; // MCは組み合わせで別途判定
 
     // gc / ht1
     const isTrue = secTruth[secId];
@@ -433,19 +433,23 @@ function updateSummary() {
     if (picked.timing === '遅') lateSet.add(name);
   })();
 
-  let html = '<div class="sum-title">集計結果</div>';
-  const hasAny = earlySet.size > 0 || lateSet.size > 0 || mcList.length > 0;
+  // マジックチャージ：氷/雷の嘘状態の組み合わせで判定（常時表示）
+  const iceLie = !!active['mc_0'];   // 氷が嘘
+  const thunderLie = !!active['mc_1']; // 雷が嘘
+  let mcResult;
+  if (!iceLie && !thunderLie)      mcResult = '両方本当';
+  else if (iceLie && !thunderLie)  mcResult = '氷だけ嘘';
+  else if (!iceLie && thunderLie)  mcResult = '雷だけ嘘';
+  else                             mcResult = '両方嘘';
 
-  if (!hasAny) {
-    html += '<div class="sum-empty">ボタンを押すと集計が表示されます</div>';
-  } else {
-    if (earlySet.size > 0)
-      html += `<div class="sum-row"><span class="lbl">早：</span>${sortByPriority([...earlySet]).join('、')}</div>`;
-    if (lateSet.size > 0)
-      html += `<div class="sum-row"><span class="lbl">遅：</span>${sortByPriority([...lateSet]).join('、')}</div>`;
-    if (mcList.length > 0)
-      html += `<div class="sum-row"><span class="lbl">マジックチャージ：</span>${mcList.join('、')}</div>`;
-  }
+  let html = '<div class="sum-title">集計結果</div>';
+
+  if (earlySet.size > 0)
+    html += `<div class="sum-row"><span class="lbl">早：</span>${sortByPriority([...earlySet]).join('、')}</div>`;
+  if (lateSet.size > 0)
+    html += `<div class="sum-row"><span class="lbl">遅：</span>${sortByPriority([...lateSet]).join('、')}</div>`;
+  // マジックチャージは常時表示
+  html += `<div class="sum-row"><span class="lbl">マジックチャージ：</span>${mcResult}</div>`;
 
   document.getElementById('summary').innerHTML = html;
 }
